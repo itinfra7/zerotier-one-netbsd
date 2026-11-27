@@ -92,7 +92,7 @@ cat > "$RC_SCRIPT" <<EOF
 #!/bin/sh
 #
 # PROVIDE: zerotier_one
-# REQUIRE: NETWORKING DAEMON
+# REQUIRE: NETWORKING DAEMON dhcpcd wpa_supplicant ntpd
 # KEYWORD: shutdown
 
 # ZeroTier One built from source on NetBSD.
@@ -109,6 +109,12 @@ start_precmd="zerotier_one_precmd"
 zerotier_one_precmd()
 {
 	install -d -o root -g wheel -m 700 ${ZT_HOME}
+	_n=0
+	while [ \$_n -lt 30 ]; do
+		netstat -rn -f inet 2>/dev/null | grep -q '^default' && break
+		sleep 1
+		_n=\$((_n + 1))
+	done
 }
 
 load_rc_config \$name
