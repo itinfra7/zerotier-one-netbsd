@@ -1,0 +1,25 @@
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -24,7 +24,8 @@ ifeq ($(OSTYPE),OpenBSD)
+ endif
+ 
+ ifeq ($(OSTYPE),NetBSD)
+-	include make-netbsd.mk
++	ZT_BUILD_PLATFORM=8
++	include make-bsd.mk
+ endif
+ 
+ drone:
+diff --git a/ext/prometheus-cpp-lite-1.0/core/include/prometheus/text_serializer.h b/ext/prometheus-cpp-lite-1.0/core/include/prometheus/text_serializer.h
+--- a/ext/prometheus-cpp-lite-1.0/core/include/prometheus/text_serializer.h
++++ b/ext/prometheus-cpp-lite-1.0/core/include/prometheus/text_serializer.h
+@@ -3,7 +3,7 @@
+ #include <iosfwd>
+ #include <vector>
+ #include <array>
+-#include <math.h>
++#include <cmath>
+ #include <ostream>
+ 
+ #include "prometheus/metric_family.h"

@@ -1,0 +1,152 @@
+diff --git a/osdep/BSDEthernetTap.cpp b/osdep/BSDEthernetTap.cpp
+--- a/osdep/BSDEthernetTap.cpp
++++ b/osdep/BSDEthernetTap.cpp
+@@ -25,7 +25,11 @@
+ #include <net/if_media.h>
+ #include <net/route.h>
+ #include <netinet/in.h>
++#ifdef __NetBSD__
++#include <net/if_tap.h>
++#else
+ #include <pthread_np.h>
++#endif
+ #include <sched.h>
+ #include <set>
+ #include <signal.h>
+@@ -149,6 +153,21 @@ BSDEthernetTap::BSDEthernetTap(
+ 			}
+ 		}
+ 	}
++#elif defined(__NetBSD__)
++	/* NetBSD clones a tap interface when /dev/tap is opened and destroys it when the descriptor is closed */
++
++	_fd = ::open("/dev/tap", O_RDWR);
++	if (_fd > 0) {
++		struct ifreq ifr;
++		memset(&ifr, 0, sizeof(ifr));
++		if (::ioctl(_fd, TAPGIFNAME, &ifr) == 0) {
++			_dev = ifr.ifr_name;
++		}
++		else {
++			::close(_fd);
++			_fd = 0;
++		}
++	}
+ #else
+ 	/* Other BSDs like OpenBSD only have a limited number of tap devices that cannot be renamed */
+ 
+@@ -177,10 +196,17 @@ BSDEthernetTap::BSDEthernetTap(
+ 	OSUtils::ztsnprintf(metstr, sizeof(metstr), "%u", _metric);
+ 	long cpid = (long)vfork();
+ 	if (cpid == 0) {
++#ifdef __NetBSD__
++#ifdef ZT_TRACE
++		fprintf(stderr, "DEBUG: ifconfig %s link %s active mtu %s metric %s up" ZT_EOL_S, _dev.c_str(), ethaddr, mtustr, metstr);
++#endif
++		::execl("/sbin/ifconfig", "/sbin/ifconfig", _dev.c_str(), "link", ethaddr, "active", "mtu", mtustr, "metric", metstr, "up", (const char*)0);
++#else
+ #ifdef ZT_TRACE
+ 		fprintf(stderr, "DEBUG: ifconfig %s lladdr %s mtu %s metric %s up" ZT_EOL_S, _dev.c_str(), ethaddr, mtustr, metstr);
+ #endif
+ 		::execl("/sbin/ifconfig", "/sbin/ifconfig", _dev.c_str(), "lladdr", ethaddr, "mtu", mtustr, "metric", metstr, "up", (const char*)0);
++#endif
+ 		::_exit(-1);
+ 	}
+ 	else if (cpid > 0) {
+@@ -203,9 +229,14 @@ BSDEthernetTap::BSDEthernetTap(
+ BSDEthernetTap::~BSDEthernetTap()
+ {
+ 	::write(_shutdownSignalPipe[1], "\0", 1);	// causes thread to exit
++	Thread::join(_thread);
++	for (std::thread& t : _rxThreads) {
++		t.join();
++	}
+ 	::close(_fd);
+ 	::close(_shutdownSignalPipe[0]);
+ 	::close(_shutdownSignalPipe[1]);
++#ifndef __NetBSD__
+ 	long cpid = (long)vfork();
+ 	if (cpid == 0) {
+ #ifdef ZT_TRACE
+@@ -218,10 +249,7 @@ BSDEthernetTap::~BSDEthernetTap()
+ 		int exitcode = -1;
+ 		::waitpid(cpid, &exitcode, 0);
+ 	}
+-	Thread::join(_thread);
+-	for (std::thread& t : _rxThreads) {
+-		t.join();
+-	}
++#endif
+ }
+ 
+ void BSDEthernetTap::setEnabled(bool en)
+@@ -372,7 +400,7 @@ void BSDEthernetTap::scanMulticastGroups(std::vector<MulticastGroup>& added, std
+ {
+ 	std::vector<MulticastGroup> newGroups;
+ 
+-#ifndef __OpenBSD__
++#if !defined(__OpenBSD__) && !defined(__NetBSD__)
+ 	struct ifmaddrs* ifmap = (struct ifmaddrs*)0;
+ 	if (! getifmaddrs(&ifmap)) {
+ 		struct ifmaddrs* p = ifmap;
+@@ -387,7 +415,7 @@ void BSDEthernetTap::scanMulticastGroups(std::vector<MulticastGroup>& added, std
+ 		}
+ 		freeifmaddrs(ifmap);
+ 	}
+-#endif	 // __OpenBSD__
++#endif	 // !__OpenBSD__ && !__NetBSD__
+ 
+ 	std::vector<InetAddress> allIps(ips());
+ 	for (std::vector<InetAddress>::iterator ip(allIps.begin()); ip != allIps.end(); ++ip)
+@@ -435,7 +463,7 @@ void BSDEthernetTap::threadMain() throw()
+ 	// constructing itself.
+ 	Thread::sleep(500);
+ 
+-#ifndef __OpenBSD__
++#if !defined(__OpenBSD__) && !defined(__NetBSD__)
+ 	bool pinning = _pinning;
+ 
+ 	for (unsigned int i = 0; i < _concurrency; ++i) {
+@@ -454,7 +482,7 @@ void BSDEthernetTap::threadMain() throw()
+ 					exit(1);
+ 				}
+ 			}
+-#endif	 // __OpenBSD__
++#endif	 // !__OpenBSD__ && !__NetBSD__
+ 
+ 			uint8_t b[ZT_TAP_BUF_SIZE];
+ 			MAC to, from;
+@@ -502,10 +530,10 @@ void BSDEthernetTap::threadMain() throw()
+ 					}
+ 				}
+ 			}
+-#ifndef __OpenBSD__
++#if !defined(__OpenBSD__) && !defined(__NetBSD__)
+ 		}));
+ 	}
+-#endif	 // __OpenBSD__
++#endif	 // !__OpenBSD__ && !__NetBSD__
+ }
+ 
+ }	// namespace ZeroTier
+diff --git a/osdep/EthernetTap.cpp b/osdep/EthernetTap.cpp
+--- a/osdep/EthernetTap.cpp
++++ b/osdep/EthernetTap.cpp
+@@ -42,7 +42,7 @@
+ #endif	 // __FreeBSD__
+ 
+ #ifdef __NetBSD__
+-#include "NetBSDEthernetTap.hpp"
++#include "BSDEthernetTap.hpp"
+ #endif	 // __NetBSD__
+ 
+ #ifdef __OpenBSD__
+@@ -128,7 +128,7 @@ std::shared_ptr<EthernetTap> EthernetTap::newInstance(
+ #endif	 // __FreeBSD__
+ 
+ #ifdef __NetBSD__
+-	return std::shared_ptr<EthernetTap>(new NetBSDEthernetTap(homePath, mac, mtu, metric, nwid, friendlyName, handler, arg));
++	return std::shared_ptr<EthernetTap>(new BSDEthernetTap(homePath, concurrency, pinning, mac, mtu, metric, nwid, friendlyName, handler, arg));
+ #endif	 // __NetBSD__
+ 
+ #ifdef __OpenBSD__

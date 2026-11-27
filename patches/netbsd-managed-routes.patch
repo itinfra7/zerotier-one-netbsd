@@ -1,0 +1,26 @@
+diff --git a/osdep/ManagedRoute.cpp b/osdep/ManagedRoute.cpp
+--- a/osdep/ManagedRoute.cpp
++++ b/osdep/ManagedRoute.cpp
+@@ -99,6 +99,10 @@ struct _RTE {
+ #ifdef __BSD__	 // ------------------------------------------------------------
+ #define ZT_ROUTING_SUPPORT_FOUND 1
+ 
++#ifdef __NetBSD__
++#define RTF_LLINFO RTF_LLDATA
++#endif
++
+ #ifndef ZT_SDK
+ static std::vector<_RTE> _getRTEs(const InetAddress& target, bool contains)
+ {
+@@ -218,7 +222,11 @@ static std::vector<_RTE> _getRTEs(const InetAddress& target, bool contains)
+ 									*/
+ 							}
+ 
++#ifdef __NetBSD__
++							saptr += RT_ROUNDUP(salen);
++#else
+ 							saptr += salen;
++#endif
+ 						}
+ 
+ 						deviceIndex = rtm->rtm_index;
